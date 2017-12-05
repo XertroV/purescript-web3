@@ -26,6 +26,8 @@ module Network.Ethereum.Web3.Types.Types
        , _nonce
        , Web3(..)
        , unsafeCoerceWeb3
+       , Web3Par
+       , unsafeCoerceWeb3Par
        , Filter(..)
        , defaultFilter
        , _address
@@ -42,13 +44,14 @@ module Network.Ethereum.Web3.Types.Types
 import Prelude
 
 import Control.Error.Util (hush)
-import Control.Monad.Aff (Aff)
+import Control.Monad.Aff (Aff, ParAff)
 import Control.Monad.Aff.Class (class MonadAff)
 import Control.Monad.Aff.Unsafe (unsafeCoerceAff)
 import Control.Monad.Eff (kind Effect)
 import Control.Monad.Eff.Class (class MonadEff)
 import Control.Monad.Eff.Exception (Error)
 import Control.Monad.Error.Class (class MonadThrow, catchError)
+import Control.Parallel.Class (class Parallel, sequential, parallel)
 import Data.Array (many)
 import Data.Foreign (readBoolean, Foreign, F)
 import Data.Foreign.Class (class Decode, class Encode, encode, decode)
@@ -345,7 +348,7 @@ instance showSyncStatus :: Show SyncStatus where
     show = genericShow
 
 --------------------------------------------------------------------------------
--- * Web3M
+-- * Web3
 --------------------------------------------------------------------------------
 
 foreign import data ETH :: Effect
@@ -372,6 +375,27 @@ derive newtype instance monadThrowWeb3 :: MonadThrow Error (Web3 p e)
 
 unsafeCoerceWeb3 :: forall p e1 e2 . Web3 p e1 ~> Web3 p e2
 unsafeCoerceWeb3 (Web3 action) = Web3 $ unsafeCoerceAff action
+
+--------------------------------------------------------------------------------
+-- * Web3Par
+--------------------------------------------------------------------------------
+
+-- | A monad for parallel asynchronous Web3 actions
+
+newtype Web3Par p e a = Web3Par (ParAff (eth :: ETH | e) a)
+
+derive newtype instance functorWeb3Par :: Functor (Web3Par p e)
+
+derive newtype instance applyWeb3Par :: Apply (Web3Par p e)
+
+derive newtype instance applicativeWeb3Par :: Applicative (Web3Par p e)
+
+unsafeCoerceWeb3Par :: forall p e1 e2 . Web3Par p e1 ~> Web3Par p e2
+unsafeCoerceWeb3Par (Web3Par action) = Web3Par <<< parallel <<< unsafeCoerceAff <<< sequential $ action
+
+instance monadParWeb3 :: Parallel (Web3Par p e) (Web3 p e)  where
+  sequential (Web3Par action) = Web3 <<< sequential $ action
+  parallel (Web3 action) = Web3Par <<< parallel $ action
 
 --------------------------------------------------------------------------------
 -- * Filters

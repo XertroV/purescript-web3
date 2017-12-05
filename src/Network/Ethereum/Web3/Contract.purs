@@ -7,6 +7,7 @@ import Control.Monad.Aff.Class (liftAff)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Reader (ReaderT, runReaderT)
+import Control.Parallel.Class (parallel, sequential)
 import Data.Array (notElem, catMaybes)
 import Data.Functor.Tagged (Tagged, untagged)
 import Data.Generic.Rep (class Generic)
@@ -69,6 +70,33 @@ event addr handler = do
       changes <- eth_getFilterChanges fltr
       acts <- for (catMaybes $ map pairChange changes) $ \(Tuple changeWithMeta changeEvent) -> do
         runReaderT (handler changeEvent) changeWithMeta
+      when (TerminateEvent `notElem` acts) $ loop fltr
+    pairChange :: Change -> Maybe (Tuple Change a)
+    pairChange rawChange = do
+      change <- decodeEvent rawChange
+      pure (Tuple rawChange change)
+
+-- | Same as 'event', but execute the handler in parallel over the captured events in a given block.
+eventPar :: forall p e a i ni.
+          IsAsyncProvider p
+       => DecodeEvent i ni a
+       => EventFilter a
+       => Address
+       -> (a -> ReaderT Change (Web3 p e) EventAction)
+       -> Web3 p e (Fiber (eth :: ETH | e) Unit)
+eventPar addr handler = do
+    fid <- eth_newFilter (eventFilter (Proxy :: Proxy a) addr)
+    forkWeb3' (Proxy :: Proxy p) $ do
+      loop fid
+      _ <- eth_uninstallFilter fid
+      pure unit
+  where
+    loop :: FilterId -> Web3 p e Unit
+    loop fltr = do
+      _ <- liftAff $ delay (Milliseconds 1000.0)
+      changes <- eth_getFilterChanges fltr
+      acts <- sequential $ for (catMaybes $ map pairChange changes) $ \(Tuple changeWithMeta changeEvent) ->
+        runReaderT (parallel $ handler changeEvent) changeWithMeta
       when (TerminateEvent `notElem` acts) $ loop fltr
     pairChange :: Change -> Maybe (Tuple Change a)
     pairChange rawChange = do
