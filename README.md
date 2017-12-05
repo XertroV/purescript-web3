@@ -29,6 +29,7 @@ To see an example project using all of the purescript-web3 tools and with thermi
 
 ## Documentation
 
+Slides from the NYC-purescript meetup are available [here](https://cdn.rawgit.com/f-o-a-m/purescript-web3-presentation/gh-pages/index.html)
 Module documentation is [published on Pursuit](http://pursuit.purescript.org/packages/purescript-web3).
 
 ## Resources
