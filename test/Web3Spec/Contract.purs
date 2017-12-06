@@ -7,10 +7,10 @@ import Control.Monad.Eff.Console (CONSOLE, logShow)
 import Data.Functor.Tagged (Tagged, tagged)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Symbol (SProxy)
-import Network.Ethereum.Web3.Contract (sendTx)
+import Network.Ethereum.Web3.Contract (call, sendTx)
 import Network.Ethereum.Web3.Provider (class IsAsyncProvider, httpProvider, runWeb3)
-import Network.Ethereum.Web3.Solidity (type (:&), D2, D5, D6, IntN, Tuple1(..), intNFromBigNumber)
-import Network.Ethereum.Web3.Types (Address, ETH, Ether, HexString, Value, Web3(..), embed, mkAddress, mkHexString, unHex)
+import Network.Ethereum.Web3.Solidity (type (:&), D2, D5, D6, IntN, Tuple0(..), Tuple1(..), UIntN, intNFromBigNumber)
+import Network.Ethereum.Web3.Types (Address, CallMode, ETH, Ether, HexString, Value, Web3(..), embed, mkAddress, mkHexString, unHex)
 import Partial.Unsafe (unsafePartial)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -34,6 +34,10 @@ instance isAsyncHttp :: IsAsyncProvider HttpProvider where
 
 setA :: forall e . IntN (D2 :& D5 :& D6) -> Web3 HttpProvider e HexString
 setA n = sendTx (Just ssAddress) adminAddress (zero :: Value Ether) ((tagged <<< Tuple1 $ n) :: FnSet)
+
+
+get :: forall e . Address -> Maybe Address -> CallMode -> Web3 HttpProvider e {count :: UIntN (D2 :& D5 :& D6)}
+get to mfrom cm = call (Proxy :: Proxy (Tuple1 (Tagged (SProxy "count") (UIntN (D2 :& D5 :& D6))))) to mfrom cm (tagged Tuple0 :: Tagged (SProxy "count()") Tuple0)
 
 simpleStorageSpec :: forall r. Spec (eth :: ETH, console :: CONSOLE | r) Unit
 simpleStorageSpec =

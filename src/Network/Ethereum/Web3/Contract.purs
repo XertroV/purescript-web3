@@ -10,7 +10,7 @@ import Control.Monad.Reader (ReaderT, runReaderT)
 import Control.Parallel.Class (parallel, sequential)
 import Data.Array (notElem, catMaybes)
 import Data.Functor.Tagged (Tagged, untagged)
-import Data.Generic.Rep (class Generic)
+import Data.Generic.Rep (class Generic, Constructor)
 import Data.Generic.Rep.Eq (genericEq)
 import Data.Generic.Rep.Show (genericShow)
 import Data.Lens ((.~))
@@ -21,9 +21,11 @@ import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Network.Ethereum.Web3.Api (eth_call, eth_getFilterChanges, eth_newFilter, eth_sendTransaction, eth_uninstallFilter)
 import Network.Ethereum.Web3.Provider (class IsAsyncProvider, forkWeb3')
-import Network.Ethereum.Web3.Solidity (class GenericABIDecode, class GenericABIEncode, genericABIEncode, genericFromData, class DecodeEvent, decodeEvent)
+import Network.Ethereum.Web3.Solidity (class ArgsToRowListProxy, class DecodeEvent, class GenericABIDecode, class GenericABIEncode, class ToRecordFields, decodeEvent, genericABIEncode, genericFromData, genericToRecordFields)
 import Network.Ethereum.Web3.Types (class EtherUnit, Address, CallMode, Change, ETH, Filter, FilterId, HexString, Web3, _data, _from, _gas, _to, _value, convert, defaultTransactionOptions, hexadecimal, parseBigNumber, toSelector)
 import Type.Proxy (Proxy(..))
+import Type.Row (class ListToRow)
+
 
 --------------------------------------------------------------------------------
 -- * Events
@@ -126,27 +128,26 @@ class TxMethod (selector :: Symbol) a where
            -> Web3 p e HexString
            -- ^ 'Web3' wrapped tx hash
 
-class CallMethod (selector :: Symbol) a b where
+class CallMethod (selector :: Symbol) a b | selector a -> b where
     -- | Constant call given contract 'Address' in mode and given input data
-    call :: forall p e.
-            IsAsyncProvider p
-         => IsSymbol selector
-         => Address
-         -- ^ Contract address
-         -> Maybe Address
-         -- from address
-         -> CallMode
-         -- ^ State mode for constant call (latest or pending)
-         -> Tagged (SProxy selector) a
-         -- ^ Method data
-         -> Web3 p e b
-         -- ^ 'Web3' wrapped result
+    callMethod :: forall p e.
+                  IsAsyncProvider p
+               => Address
+               -- ^ Contract address
+               -> Maybe Address
+               -- from address
+               -> CallMode
+               -- ^ State mode for constant call (latest or pending)
+               -> Tagged (SProxy selector) a
+               -- ^ Method data
+               -> Web3 p e b
+               -- ^ 'Web3' wrapped result
 
 instance txmethodAbiEncode :: (Generic a rep, GenericABIEncode rep) => TxMethod s a where
   sendTx = _sendTransaction
 
-instance callmethodAbiEncode :: (Generic a arep, GenericABIEncode arep, Generic b brep, GenericABIDecode brep) => CallMethod s a b where
-  call = _call
+instance callmethodAbiEncode :: (Generic a arep, GenericABIEncode arep, Generic b brep, GenericABIDecode brep, IsSymbol s) => CallMethod s a b where
+  callMethod = _callMethod
 
 _sendTransaction :: forall p a rep e u selector .
                     IsAsyncProvider p
@@ -171,19 +172,19 @@ _sendTransaction mto f val dat = do
                                 # _value .~ Just (convert val)
                                 # _gas .~ defaultGas
 
-_call :: forall p a arep b brep e selector .
-         IsAsyncProvider p
-      => IsSymbol selector
-      => Generic a arep
-      => GenericABIEncode arep
-      => Generic b brep
-      => GenericABIDecode brep
-      => Address
-      -> Maybe Address
-      -> CallMode
-      -> Tagged (SProxy selector) a
-      -> Web3 p e b
-_call t mf cm dat = do
+_callMethod :: forall p a arep b brep e selector .
+               IsAsyncProvider p
+            => IsSymbol selector
+            => Generic a arep
+            => GenericABIEncode arep
+            => Generic b brep
+            => GenericABIDecode brep
+            => Address
+            -> Maybe Address
+            -> CallMode
+            -> Tagged (SProxy selector) a
+            -> Web3 p e b
+_callMethod t mf cm dat = do
     let sel = toSelector <<< reflectSymbol $ (SProxy :: SProxy selector)
     res <- eth_call (txdata $ sel <> (genericABIEncode <<< untagged $ dat)) cm
     case genericFromData res of
@@ -194,3 +195,26 @@ _call t mf cm dat = do
       defaultTransactionOptions # _to .~ Just t
                                 # _from .~ mf
                                 # _data .~ Just d
+
+class Call (selector :: Symbol) a b fields where
+    call :: forall p e.
+            IsAsyncProvider p
+         => Proxy b
+         -> Address
+         -- ^ Contract address
+         -> Maybe Address
+         -- from address
+         -> CallMode
+         -- ^ State mode for constant call (latest or pending)
+         -> Tagged (SProxy selector) a
+         -- ^ Method data
+         -> Web3 p e (Record fields)
+         -- ^ 'Web3' wrapped result
+
+instance defaultCall :: ( CallMethod selector a b
+                        , ToRecordFields args fields l
+                        , Generic b (Constructor name args)
+                        , ArgsToRowListProxy args l
+                        , ListToRow l fields
+                        ) => Call selector a b fields where
+  call _ to mfrom cm pl = genericToRecordFields <$> callMethod to mfrom cm pl
