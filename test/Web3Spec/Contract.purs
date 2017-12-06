@@ -35,7 +35,6 @@ instance isAsyncHttp :: IsAsyncProvider HttpProvider where
 setA :: forall e . IntN (D2 :& D5 :& D6) -> Web3 HttpProvider e HexString
 setA n = sendTx (Just ssAddress) adminAddress (zero :: Value Ether) ((tagged <<< Tuple1 $ n) :: FnSet)
 
-
 get :: forall e . Address -> Maybe Address -> CallMode -> Web3 HttpProvider e {count :: UIntN (D2 :& D5 :& D6)}
 get to mfrom cm = call (Proxy :: Proxy (Tuple1 (Tagged (SProxy "count") (UIntN (D2 :& D5 :& D6))))) to mfrom cm (tagged Tuple0 :: Tagged (SProxy "count()") Tuple0)
 

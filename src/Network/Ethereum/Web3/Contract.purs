@@ -1,4 +1,15 @@
-module Network.Ethereum.Web3.Contract where
+module Network.Ethereum.Web3.Contract
+  ( class EventFilter
+  , eventFilter
+  , EventAction(..)
+  , event
+  , eventPar
+  , class TxMethod
+  , sendTx
+  , class CallMethod
+  , callMethod
+  , call
+  ) where
 
 import Prelude
 
@@ -196,25 +207,18 @@ _callMethod t mf cm dat = do
                                 # _from .~ mf
                                 # _data .~ Just d
 
-class Call (selector :: Symbol) a b fields where
-    call :: forall p e.
-            IsAsyncProvider p
-         => Proxy b
-         -> Address
-         -- ^ Contract address
-         -> Maybe Address
-         -- from address
-         -> CallMode
-         -- ^ State mode for constant call (latest or pending)
-         -> Tagged (SProxy selector) a
-         -- ^ Method data
-         -> Web3 p e (Record fields)
-         -- ^ 'Web3' wrapped result
 
-instance defaultCall :: ( CallMethod selector a b
-                        , ToRecordFields args fields l
-                        , Generic b (Constructor name args)
-                        , ArgsToRowListProxy args l
-                        , ListToRow l fields
-                        ) => Call selector a b fields where
-  call _ to mfrom cm pl = genericToRecordFields <$> callMethod to mfrom cm pl
+call :: forall p e a b selector args fields l name .
+           CallMethod selector a b
+        => IsAsyncProvider p
+        => ToRecordFields args fields l
+        => Generic b (Constructor name args)
+        => ArgsToRowListProxy args l
+        => ListToRow l fields
+        => Proxy b
+        -> Address
+        -> Maybe Address
+        -> CallMode
+        -> Tagged (SProxy selector) a
+        -> Web3 p e (Record fields)
+call _ to mfrom cm pl = genericToRecordFields <$> callMethod to mfrom cm pl
