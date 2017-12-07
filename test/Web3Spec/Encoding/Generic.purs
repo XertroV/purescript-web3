@@ -13,8 +13,8 @@ import Data.Newtype (class Newtype)
 import Data.Record.Builder (build, merge)
 import Data.Symbol (SProxy)
 import Network.Ethereum.Web3.Solidity (type (:&), Address, D2, D5, D6, Tuple1, Tuple2(..), Tuple3(..), UIntN, fromData)
-import Network.Ethereum.Web3.Solidity.Event (class DecodeEvent, class IndexedEvent, decodeEvent, genericArrayParser)
-import Network.Ethereum.Web3.Solidity.Generic (genericToRecordFields)
+import Network.Ethereum.Web3.Solidity.Event (class IndexedEvent, decodeEvent, genericArrayParser)
+import Network.Ethereum.Web3.Solidity.Generic (genericToRecordFields, genericFromRecordFields)
 import Network.Ethereum.Web3.Types (Change(..), HexString, mkAddress, mkHexString)
 import Partial.Unsafe (unsafePartial)
 import Test.Spec (Spec, describe, it)
@@ -23,6 +23,7 @@ import Test.Spec.Assertions (shouldEqual)
 encodingGenericSpec :: forall r . Spec r Unit
 encodingGenericSpec = describe "encoding-spec for generics" do
   toRecordFieldsSpec
+  recordFieldsSpec
 
 
 toRecordFieldsSpec :: forall r . Spec r Unit
@@ -50,6 +51,14 @@ toRecordFieldsSpec =
       it "can combine events" do
         decodeEvent change `shouldEqual` Just transfer
 
+
+recordFieldsSpec :: forall r . Spec r Unit
+recordFieldsSpec =
+    describe "test toRecordFields <<< fromRecordFields == id" do
+      it "pass compisition test" do
+        let as = Tuple3 (tagged 1) (tagged "hello") (tagged 'c') :: Tuple3 (Tagged (SProxy "a") Int) (Tagged (SProxy "d") String) (Tagged (SProxy "e") Char)
+            row = genericToRecordFields as :: {a :: Int, d :: String, e :: Char}
+        genericFromRecordFields row `shouldEqual` as
 
 newtype WeirdTuple = WeirdTuple {a :: Int, d :: String, e :: Char}
 

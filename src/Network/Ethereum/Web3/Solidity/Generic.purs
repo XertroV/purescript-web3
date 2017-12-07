@@ -12,6 +12,9 @@ module Network.Ethereum.Web3.Solidity.Generic
  , class ToRecordFields
  , toRecordFields
  , genericToRecordFields
+ , class FromRecordFields
+ , fromRecordFields
+ , genericFromRecordFields
  , class ArgsToRowListProxy
  , argsToRowListProxy
  ) where
@@ -19,13 +22,13 @@ module Network.Ethereum.Web3.Solidity.Generic
 import Prelude
 
 import Control.Error.Util (hush)
-import Control.Monad.State.Class (get)
+import Control.Monad.State.Class (get) as State
 import Data.Array (foldl, length, reverse, sort, uncons, (:))
-import Data.Functor.Tagged (Tagged, untagged)
+import Data.Functor.Tagged (Tagged, untagged, tagged)
 import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments(..), Product(..), from, to)
 import Data.Maybe (Maybe(..))
 import Data.Monoid (mempty)
-import Data.Record (insert)
+import Data.Record (delete, get, insert)
 import Data.Symbol (class IsSymbol, SProxy(..))
 import Network.Ethereum.Web3.Solidity.AbiEncoding (class ABIDecode, class ABIEncode, fromDataParser, take, toDataBuilder)
 import Network.Ethereum.Web3.Solidity.EncodingType (class EncodingType, isDynamic)
@@ -34,7 +37,7 @@ import Text.Parsing.Parser (ParseState(..), Parser, runParser)
 import Text.Parsing.Parser.Combinators (lookAhead)
 import Text.Parsing.Parser.Pos (Position(..))
 import Type.Proxy (Proxy(..))
-import Type.Row (class ListToRow, class RowLacks, Cons, Nil, RLProxy(..), kind RowList)
+import Type.Row (class ListToRow, class RowLacks, class RowToList, Cons, Nil, RLProxy(..), kind RowList)
 
 -- | A class for encoding generically composed datatypes to their abi encoding
 class GenericABIEncode a where
@@ -176,7 +179,7 @@ dParser :: forall a . ABIDecode a => Parser String a
 dParser = do
   dataOffset <- unsafeToInt <$> fromDataParser
   lookAhead $ do
-    (ParseState _ (Position p) _) <- get
+    (ParseState _ (Position p) _) <- State.get
     _ <- take (dataOffset * 2 - (p.column - 1))
     fromDataParser
 
@@ -226,3 +229,37 @@ genericToRecordFields a =
   let Constructor row = from a
   in toRecordFields (RLProxy :: RLProxy l) row
 
+
+class FromRecordFields fields args (rowList :: RowList) | rowList -> args, args -> rowList, rowList -> fields where
+  fromRecordFields :: RLProxy rowList -> Record fields -> args
+
+instance fromRecordFieldsBase :: ( RowToList r (Cons s a Nil)
+                                 , IsSymbol s
+                                 , RowCons s a () r
+                                 ) => FromRecordFields r (Argument (Tagged (SProxy s) a)) (Cons s a Nil) where
+  fromRecordFields _ r = Argument <<< tagged $ get (SProxy :: SProxy s) r
+
+
+instance fromRecordFieldsBaseNull :: RowToList r Nil => FromRecordFields r NoArguments Nil where
+  fromRecordFields _ _ = NoArguments
+
+
+instance fromRecordFieldsInductive :: ( FromRecordFields fields args l
+                                      , RowCons s a fields r
+                                      , IsSymbol s
+                                      , RowLacks s fields
+                                      ) => FromRecordFields r (Product (Argument (Tagged (SProxy s) a)) args) (Cons s a l) where
+  fromRecordFields _ r =
+    let arg1 = Argument <<< tagged $ get (SProxy :: SProxy s) r
+        arg2 = fromRecordFields (RLProxy :: RLProxy l) $ delete (SProxy :: SProxy s) r
+    in Product arg1 arg2
+
+
+genericFromRecordFields :: forall args fields l a name .
+                           FromRecordFields fields args l
+                        => Generic a (Constructor name args)
+                        => ArgsToRowListProxy args l
+                        => RowToList fields l
+                        => Record fields
+                        -> a
+genericFromRecordFields row = to <<< Constructor $ fromRecordFields (RLProxy :: RLProxy l) row
